@@ -4,20 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dndappcompanion/main.dart';
 
 void main() {
-  testWidgets('App displays persistent top strip', (WidgetTester tester) async {
+  testWidgets('App displays top bar with settings, search, and dice', (WidgetTester tester) async {
     await tester.pumpWidget(const DndCompanionApp());
 
-    expect(find.text('D&D Companion'), findsOneWidget);
+    expect(find.byIcon(Icons.settings), findsOneWidget);
+    expect(find.byIcon(Icons.search), findsOneWidget);
+    expect(find.byIcon(Icons.casino), findsNWidgets(2));
   });
 
-  testWidgets('App displays tab bar with 5 tabs', (WidgetTester tester) async {
+  testWidgets('App displays tab bar with 4 tabs', (WidgetTester tester) async {
     await tester.pumpWidget(const DndCompanionApp());
 
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Characters'), findsOneWidget);
     expect(find.text('Dice'), findsOneWidget);
     expect(find.text('Inventory'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
   });
 
   testWidgets('Tapping tab switches content', (WidgetTester tester) async {

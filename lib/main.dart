@@ -32,7 +32,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -56,7 +56,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                 Tab(icon: Icon(Icons.people), text: 'Characters'),
                 Tab(icon: Icon(Icons.casino), text: 'Dice'),
                 Tab(icon: Icon(Icons.inventory_2), text: 'Inventory'),
-                Tab(icon: Icon(Icons.settings), text: 'Settings'),
               ],
             ),
             Expanded(
@@ -67,7 +66,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                   CharactersTab(),
                   DiceTab(),
                   InventoryTab(),
-                  SettingsTab(),
                 ],
               ),
             ),
@@ -88,26 +86,19 @@ class PersistentTopStrip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       color: Theme.of(context).colorScheme.primaryContainer,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          const Text(
-            'D&D Companion',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {},
           ),
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: () {},
-              ),
-              IconButton(
-                icon: const Icon(Icons.notifications),
-                onPressed: () {},
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.casino),
+            onPressed: () {},
           ),
         ],
       ),
@@ -282,17 +273,6 @@ class InventoryTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Center(
       child: Text('Inventory Tab'),
-    );
-  }
-}
-
-class SettingsTab extends StatelessWidget {
-  const SettingsTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text('Settings Tab'),
     );
   }
 }
