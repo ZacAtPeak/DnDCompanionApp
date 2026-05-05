@@ -1,30 +1,33 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dndappcompanion/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('App displays persistent top strip', (WidgetTester tester) async {
+    await tester.pumpWidget(const DndCompanionApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('D&D Companion'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('App displays tab bar with 5 tabs', (WidgetTester tester) async {
+    await tester.pumpWidget(const DndCompanionApp());
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Characters'), findsOneWidget);
+    expect(find.text('Dice'), findsOneWidget);
+    expect(find.text('Inventory'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+  });
+
+  testWidgets('Tapping tab switches content', (WidgetTester tester) async {
+    await tester.pumpWidget(const DndCompanionApp());
+
+    expect(find.text('Home Tab'), findsOneWidget);
+
+    await tester.tap(find.text('Dice'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dice Tab'), findsOneWidget);
   });
 }
