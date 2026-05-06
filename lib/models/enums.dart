@@ -24,6 +24,7 @@ enum CreatureSize {
   }
 
   static CreatureSize fromString(String value) {
+    if (value.trim().isEmpty) return medium;
     switch (value.toLowerCase()) {
       case 'tiny':
         return tiny;
@@ -137,6 +138,7 @@ enum Alignment {
   }
 
   static Alignment fromString(String value) {
+    if (value.trim().isEmpty) return trueNeutral;
     switch (value.toLowerCase().replaceAll(' ', '_')) {
       case 'lawful_good':
         return lawfulGood;

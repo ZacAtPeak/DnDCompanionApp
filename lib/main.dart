@@ -6,6 +6,8 @@ import 'widgets/ability_scores_grid.dart';
 import 'providers/campaign_state_provider.dart';
 import 'services/networking/campaign_network_client.dart';
 import 'services/networking/connection_state.dart' as net;
+import 'services/networking/models.dart' as net_models;
+import 'services/session_persistence.dart';
 import 'models/models.dart' as models;
 import 'widgets/network_session_picker.dart';
 
@@ -116,6 +118,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
   late TabController _tabController;
   late CampaignNetworkClient _networkClient;
   late CampaignStateNotifier _campaignNotifier;
+  final _persistence = SessionPersistenceService();
 
   @override
   void initState() {
@@ -123,6 +126,33 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     _tabController = TabController(length: 6, vsync: this);
     _networkClient = CampaignNetworkClient();
     _campaignNotifier = CampaignStateNotifier(client: _networkClient);
+
+    _persistence.init().then((_) {
+      if (!mounted) return;
+      _initFromPersistence();
+    });
+  }
+
+  void _initFromPersistence() {
+    final savedClientID = _persistence.clientID;
+    if (savedClientID != null) {
+      _networkClient.restoreClientID(savedClientID);
+    } else {
+      _persistence.saveClientID(_networkClient.clientID);
+    }
+
+    final cachedState = _persistence.cachedState;
+    if (cachedState != null) {
+      _campaignNotifier.loadCachedState(
+        state: cachedState,
+        assignedPlayerID: _persistence.assignedPlayerID,
+      );
+    }
+
+    if (_persistence.hasSavedSession) {
+      _networkClient.setPersistence(_persistence);
+      _networkClient.tryAutoReconnect();
+    }
   }
 
   @override
@@ -145,6 +175,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         onSeedColorChanged: widget.onSeedColorChanged,
         networkClient: _networkClient,
         campaignNotifier: _campaignNotifier,
+        persistence: _persistence,
       ),
     );
   }
@@ -161,8 +192,63 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         child: Column(
           children: [
             PersistentTopStrip(onSettings: _openSettings),
-            const InitiativeStrip(),
-            const PlayerCharacterStatusBar(),
+            ListenableBuilder(
+              listenable: _campaignNotifier,
+              builder: (context, _) {
+                return InitiativeStrip(notifier: _campaignNotifier);
+              },
+            ),
+            ListenableBuilder(
+              listenable: _campaignNotifier,
+              builder: (context, _) {
+                return PlayerCharacterStatusBar(notifier: _campaignNotifier);
+              },
+            ),
+            ListenableBuilder(
+              listenable: _campaignNotifier,
+              builder: (context, _) {
+                final isReconnecting = _campaignNotifier.isShowingCachedState &&
+                    _campaignNotifier.connectionState.status !=
+                        net.ConnectionStatus.ready;
+                if (!isReconnecting) return const SizedBox.shrink();
+                final sessionName = _persistence.sessionName;
+                return Material(
+                  color: Theme.of(context).colorScheme.tertiaryContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 6),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onTertiaryContainer,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            sessionName != null
+                                ? 'Reconnecting to "$sessionName"...'
+                                : 'Reconnecting to previous session...',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onTertiaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
             TabBar(
               isScrollable: true,
               controller: _tabController,
@@ -248,12 +334,26 @@ class PersistentTopStrip extends StatelessWidget {
 }
 
 class InitiativeStrip extends StatelessWidget {
-  const InitiativeStrip({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const InitiativeStrip({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
-    final userCharacter = DemoData.createUserCharacter();
-    final character = userCharacter.character;
+    final combatents = notifier?.combatents ?? [];
+    final sortedCombatents = List.from(combatents)
+      ..sort((a, b) => b.initiative.compareTo(a.initiative));
+
+    if (sortedCombatents.isEmpty) {
+      return Container(
+        height: 100,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: const Center(
+          child: Text('No combatants'),
+        ),
+      );
+    }
 
     return Container(
       height: 100,
@@ -262,39 +362,17 @@ class InitiativeStrip extends StatelessWidget {
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        children: [
-          InitiativeSlot(
-            name: character.name,
-            currentHp: character.currentHP,
-            maxHp: character.maxHP,
-            isPlayerCharacter: true,
-          ),
-          const InitiativeSlot(
-            name: 'Goblin A',
-            currentHp: 7,
-            maxHp: 7,
-          ),
-          InitiativeSlot(
-            name: 'Aldrin',
-            currentHp: 32,
-            maxHp: 45,
-          ),
-          InitiativeSlot(
-            name: 'Bugbear',
-            currentHp: 15,
-            maxHp: 27,
-          ),
-          InitiativeSlot(
-            name: 'Theron',
-            currentHp: 52,
-            maxHp: 60,
-          ),
-          const InitiativeSlot(
-            name: 'Goblin B',
-            currentHp: 0,
-            maxHp: 7,
-          ),
-        ],
+        children: sortedCombatents.map((combatent) {
+          final isAssignedPlayer = combatent.entityID == notifier?.assignedPlayerID;
+          return InitiativeSlot(
+            name: combatent.name,
+            currentHp: combatent.currentHP,
+            maxHp: combatent.maxHP,
+            isPlayerCharacter: combatent.entityType == 'player',
+            isCurrentTurn: combatent.isTurn,
+            isAssignedCharacter: isAssignedPlayer,
+          );
+        }).toList(),
       ),
     );
   }
@@ -305,6 +383,8 @@ class InitiativeSlot extends StatelessWidget {
   final int currentHp;
   final int maxHp;
   final bool isPlayerCharacter;
+  final bool isCurrentTurn;
+  final bool isAssignedCharacter;
 
   const InitiativeSlot({
     super.key,
@@ -312,6 +392,8 @@ class InitiativeSlot extends StatelessWidget {
     required this.currentHp,
     required this.maxHp,
     this.isPlayerCharacter = false,
+    this.isCurrentTurn = false,
+    this.isAssignedCharacter = false,
   });
 
   @override
@@ -330,19 +412,23 @@ class InitiativeSlot extends StatelessWidget {
       hpColor = Colors.red;
     }
 
+    final isHighlighted = isAssignedCharacter || isCurrentTurn;
+
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: FittedBox(
         child: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isPlayerCharacter
+            color: isHighlighted
                 ? Theme.of(context).colorScheme.primaryContainer
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            border: isPlayerCharacter
+            border: isHighlighted
                 ? Border.all(
-                    color: Theme.of(context).colorScheme.primary,
+                    color: isCurrentTurn
+                        ? Colors.amber
+                        : Theme.of(context).colorScheme.primary,
                     width: 2,
                   )
                 : null,
@@ -363,10 +449,25 @@ class InitiativeSlot extends StatelessWidget {
                     width: 2,
                   ),
                 ),
-                child: Icon(
-                  isPlayerCharacter ? Icons.shield : Icons.person,
-                  color: isDead ? Colors.grey : null,
-                  size: 28,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(
+                      isPlayerCharacter ? Icons.shield : Icons.person,
+                      color: isDead ? Colors.grey : null,
+                      size: 28,
+                    ),
+                    if (isCurrentTurn)
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.amber,
+                            width: 3,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 4),
@@ -399,14 +500,34 @@ class InitiativeSlot extends StatelessWidget {
 }
 
 class PlayerCharacterStatusBar extends StatelessWidget {
-  const PlayerCharacterStatusBar({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const PlayerCharacterStatusBar({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
-    final userCharacter = DemoData.createUserCharacter();
-    final character = userCharacter.character;
-    final isDead = character.currentHP <= 0;
-    final hpPercentage = character.maxHP > 0 ? character.currentHP / character.maxHP : 0;
+    final networkPlayer = notifier?.assignedPlayer;
+
+    if (networkPlayer == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: Theme.of(context).colorScheme.primaryContainer,
+        child: const Center(
+          child: Text('Not connected'),
+        ),
+      );
+    }
+
+    // Prefer combatant HP when the player is in an active encounter — the DM
+    // drives HP changes there via combatentHitPointsChanged, which only updates
+    // the combatant record, not the player record.
+    final combatant = notifier?.assignedPlayerCombatant;
+    final currentHP = combatant?.currentHP ?? networkPlayer.currentHP;
+    final maxHP = combatant?.maxHP ?? networkPlayer.maxHP;
+
+    final isDead = currentHP <= 0;
+    final hpPercentage = maxHP > 0 ? currentHP / maxHP : 0;
 
     Color hpColor;
     if (isDead) {
@@ -443,7 +564,7 @@ class PlayerCharacterStatusBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  character.name,
+                  networkPlayer.name,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -452,7 +573,7 @@ class PlayerCharacterStatusBar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'Level ${character.level} ${character.race} ${character.playerClass}',
+                  'Level ${networkPlayer.level} ${networkPlayer.race} ${networkPlayer.playerClass}',
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -464,7 +585,7 @@ class PlayerCharacterStatusBar extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      '${character.currentHP} / ${character.maxHP}',
+                      '$currentHP / $maxHP',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -473,7 +594,7 @@ class PlayerCharacterStatusBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 16),
                     Text(
-                      'AC ${character.armorClass}',
+                      'AC ${networkPlayer.armorClass}',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -498,6 +619,7 @@ class SettingsPage extends StatefulWidget {
   final void Function(Color color, bool isDark) onSeedColorChanged;
   final CampaignNetworkClient networkClient;
   final CampaignStateNotifier campaignNotifier;
+  final SessionPersistenceService persistence;
 
   const SettingsPage({
     super.key,
@@ -508,6 +630,7 @@ class SettingsPage extends StatefulWidget {
     required this.onSeedColorChanged,
     required this.networkClient,
     required this.campaignNotifier,
+    required this.persistence,
   });
 
   @override
@@ -518,6 +641,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late ThemeMode _themeMode;
   late Color _lightSeedColor;
   late Color _darkSeedColor;
+  late TextEditingController _displayNameController;
 
   @override
   void initState() {
@@ -525,6 +649,15 @@ class _SettingsPageState extends State<SettingsPage> {
     _themeMode = widget.themeMode;
     _lightSeedColor = widget.lightSeedColor;
     _darkSeedColor = widget.darkSeedColor;
+    _displayNameController = TextEditingController(
+      text: widget.networkClient.displayName,
+    );
+  }
+
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    super.dispose();
   }
 
   void _updateTheme(ThemeMode mode) {
@@ -618,10 +751,42 @@ class _SettingsPageState extends State<SettingsPage> {
                 _SettingsSection(
                   title: 'Campaign Network',
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: TextField(
+                        controller: _displayNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Display Name',
+                          hintText: 'Name shown to other players',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          if (value.isNotEmpty) {
+                            widget.networkClient.displayName = value;
+                          }
+                        },
+                      ),
+                    ),
                     _NetworkStatusTile(
                       networkClient: widget.networkClient,
                       campaignNotifier: widget.campaignNotifier,
                     ),
+                    if (widget.persistence.hasSavedSession)
+                      ListTile(
+                        leading: const Icon(Icons.link_off),
+                        title: const Text('Clear Saved Session'),
+                        subtitle: Text(
+                          widget.persistence.sessionName != null
+                              ? 'Forget "${widget.persistence.sessionName}"'
+                              : 'Forget the saved session',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          await widget.persistence.clear();
+                          await widget.networkClient.disconnect();
+                          if (context.mounted) setState(() {});
+                        },
+                      ),
                   ],
                 ),
                 _SettingsSection(
@@ -974,6 +1139,31 @@ class _NetworkStatusTile extends StatelessWidget {
   }
 }
 
+List<models.SkillProficiency> _buildDefaultSkills(
+  net_models.NetworkAbilityScores scores,
+  int proficiencyBonus,
+) {
+  final abilityValues = {
+    'STR': scores.strength,
+    'DEX': scores.dexterity,
+    'CON': scores.constitution,
+    'INT': scores.intelligence,
+    'WIS': scores.wisdom,
+    'CHA': scores.charisma,
+  };
+  return models.kAllSkills.map((skillName) {
+    final abilityKey = models.kSkillAbilityMap[skillName]!;
+    final score = abilityValues[abilityKey]!;
+    final mod = (score - 10) ~/ 2;
+    return models.SkillProficiency(
+      skill: skillName,
+      isProficient: false,
+      bonus: mod,
+      abilityScore: abilityKey,
+    );
+  }).toList();
+}
+
 class HomeTab extends StatelessWidget {
   final CampaignStateNotifier? notifier;
 
@@ -1017,7 +1207,16 @@ class HomeTab extends StatelessWidget {
               ),
               proficiencyBonus: networkPlayer.proficiencyBonus,
               savingThrowProficiencies: const models.SavingThrowProficiencies(),
-              skills: const [],
+              skills: networkPlayer.skills.isNotEmpty
+                  ? networkPlayer.skills
+                      .map((s) => models.SkillProficiency(
+                            skill: s.skill,
+                            isProficient: s.isProficient,
+                            bonus: s.bonus,
+                            abilityScore: s.abilityScore,
+                          ))
+                      .toList()
+                  : _buildDefaultSkills(networkPlayer.abilityScores, networkPlayer.proficiencyBonus),
               senses: const models.Senses(passivePerception: 10),
               languages: networkPlayer.languages,
               actions: networkPlayer.actions

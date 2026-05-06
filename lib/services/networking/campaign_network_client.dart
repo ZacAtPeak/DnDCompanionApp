@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:nsd/nsd.dart';
 import 'package:uuid/uuid.dart';
 
+import '../session_persistence.dart';
 import 'connection_state.dart';
 import 'framing.dart';
 import 'models.dart';
@@ -32,6 +33,9 @@ class CampaignNetworkClient {
       StreamController<ConnectionState>.broadcast();
   ConnectionState _state = const ConnectionState();
 
+  final _replicatedStateController =
+      StreamController<CampaignReplicatedState?>.broadcast();
+
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
   Timer? _stateUpdateTimer;
@@ -50,8 +54,10 @@ class CampaignNetworkClient {
   int _lastAppliedRevision = 0;
   int _heartbeatIntervalMs = 10000;
   String? _assignedPlayerID;
+  String displayName = Platform.isIOS ? 'iPhone' : Platform.isAndroid ? 'Android' : 'D&D Companion';
 
   CampaignReplicatedState? _replicatedState;
+  SessionPersistenceService? _persistence;
 
   final _pendingCommands = <String, Completer<void>>{};
 
@@ -63,19 +69,65 @@ class CampaignNetworkClient {
       _connectionStateController.stream;
   ConnectionState get connectionState => _state;
 
+  Stream<CampaignReplicatedState?> get replicatedStateStream =>
+      _replicatedStateController.stream;
+
   int get lastAppliedRevision => _lastAppliedRevision;
   String? get assignedPlayerID => _assignedPlayerID;
   CampaignReplicatedState? get replicatedState => _replicatedState;
   String? get sessionID => _sessionID;
+  String get clientID => _clientID;
 
   CampaignNetworkClient() {
     _clientID = _uuid.v4();
+  }
+
+  void restoreClientID(String id) {
+    _clientID = id;
+  }
+
+  void setPersistence(SessionPersistenceService persistence) {
+    _persistence = persistence;
+  }
+
+  Future<void> tryAutoReconnect() async {
+    final p = _persistence;
+    if (p == null || !p.hasSavedSession) return;
+    _lastAppliedRevision = p.lastRevision;
+    connect(DiscoveredHost(
+      name: p.peerName ?? 'Previous Session',
+      host: p.host!,
+      port: p.port!,
+    ));
+  }
+
+  void _persistSessionState() {
+    final p = _persistence;
+    if (p == null || _connectedHost == null || _connectedPort == null) return;
+    p.saveSession(
+      host: _connectedHost!,
+      port: _connectedPort!,
+      peerName: _peerName ?? '',
+      sessionName: _sessionName ?? '',
+      assignedPlayerID: _assignedPlayerID,
+      lastRevision: _lastAppliedRevision,
+    );
+    final state = _replicatedState;
+    if (state != null) p.saveReplicatedState(state);
+  }
+
+  void _updateReplicatedState(CampaignReplicatedState? newState) {
+    _replicatedState = newState;
+    if (!_replicatedStateController.isClosed) {
+      _replicatedStateController.add(newState);
+    }
   }
 
   void _updateState(ConnectionState newState) {
     if (_state.status == newState.status &&
         _state.peerName == newState.peerName &&
         _state.sessionID == newState.sessionID &&
+        _state.assignedPlayerID == newState.assignedPlayerID &&
         _state.errorMessage == newState.errorMessage) {
       return;
     }
@@ -198,7 +250,7 @@ class CampaignNetworkClient {
   Future<void> _sendHello() async {
     final hello = Hello(
       clientID: _clientID,
-      displayName: 'D&D Companion',
+      displayName: displayName,
       protocolVersion: 2,
       capabilities: HelloCapabilities(
         supportsDeltaBatch: true,
@@ -326,12 +378,12 @@ class CampaignNetworkClient {
 
   void _handleSnapshot(Map<String, dynamic> payload) {
     final snapshot = CampaignNetworkSnapshot.fromJson(payload);
-    _replicatedState = snapshot.state;
+    _updateReplicatedState(snapshot.state);
     _lastAppliedRevision = snapshot.revision;
     _currentRevision = snapshot.revision;
 
     for (final assignment in snapshot.state.assignments) {
-      if (assignment.clientID == _clientID) {
+      if (assignment.clientID.toUpperCase() == _clientID.toUpperCase()) {
         _assignedPlayerID = assignment.playerCharacterID;
       }
     }
@@ -341,6 +393,7 @@ class CampaignNetworkClient {
       currentRevision: _currentRevision,
       assignedPlayerID: _assignedPlayerID,
     ));
+    _persistSessionState();
   }
 
   void _handleDelta(Map<String, dynamic> payload) {
@@ -359,6 +412,7 @@ class CampaignNetworkClient {
       status: ConnectionStatus.ready,
       currentRevision: _currentRevision,
     ));
+    _persistSessionState();
   }
 
   void _handleDeltaBatch(Map<String, dynamic> payload) {
@@ -380,6 +434,7 @@ class CampaignNetworkClient {
       status: ConnectionStatus.ready,
       currentRevision: _currentRevision,
     ));
+    _persistSessionState();
   }
 
   void _applyDeltaChanges(List<CampaignDeltaChange> changes) {
@@ -388,7 +443,8 @@ class CampaignNetworkClient {
     for (final change in changes) {
       switch (change.type) {
         case 'assignmentChanged':
-          final assignment = PlayerAssignment.fromJson(change.data);
+          final assignment = PlayerAssignment.fromJson(
+              change.data['assignment'] as Map<String, dynamic>);
           if (assignment.clientID == _clientID) {
             _assignedPlayerID = assignment.playerCharacterID;
           }
@@ -470,11 +526,12 @@ class CampaignNetworkClient {
           knownSpells: p.knownSpells,
           languages: p.languages,
           initiative: p.initiative,
+          skills: p.skills,
         );
       }
       return p;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -490,7 +547,7 @@ class CampaignNetworkClient {
       players: players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyStatusesChange(Map<String, dynamic> data) {
@@ -523,11 +580,12 @@ class CampaignNetworkClient {
           knownSpells: p.knownSpells,
           languages: p.languages,
           initiative: p.initiative,
+          skills: p.skills,
         );
       }
       return p;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -543,7 +601,7 @@ class CampaignNetworkClient {
       players: players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applySpellSlotChange(Map<String, dynamic> data) {
@@ -585,11 +643,12 @@ class CampaignNetworkClient {
           knownSpells: p.knownSpells,
           languages: p.languages,
           initiative: p.initiative,
+          skills: p.skills,
         );
       }
       return p;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -605,7 +664,7 @@ class CampaignNetworkClient {
       players: players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyActionUsesChange(Map<String, dynamic> data) {
@@ -654,11 +713,12 @@ class CampaignNetworkClient {
           knownSpells: p.knownSpells,
           languages: p.languages,
           initiative: p.initiative,
+          skills: p.skills,
         );
       }
       return p;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -674,7 +734,7 @@ class CampaignNetworkClient {
       players: players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyInventoryEquippedChange(Map<String, dynamic> data) {
@@ -699,7 +759,7 @@ class CampaignNetworkClient {
         return item;
       }).toList();
     }
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -715,7 +775,7 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyCombatentHitPointsChange(Map<String, dynamic> data) {
@@ -739,7 +799,7 @@ class CampaignNetworkClient {
       }
       return c;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: combatents,
@@ -755,7 +815,7 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyCombatentStatusesChange(Map<String, dynamic> data) {
@@ -781,7 +841,7 @@ class CampaignNetworkClient {
       }
       return c;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: combatents,
@@ -797,7 +857,7 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyCombatentSpellSlotChange(Map<String, dynamic> data) {
@@ -832,7 +892,7 @@ class CampaignNetworkClient {
       }
       return c;
     }).toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: combatents,
@@ -848,13 +908,13 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyRollInserted(Map<String, dynamic> data) {
     final entry = RollEntry.fromJson(data['entry'] as Map<String, dynamic>);
     final rollHistory = [entry, ..._replicatedState!.rollHistory];
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -870,14 +930,14 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyCombatentsReplaced(Map<String, dynamic> data) {
     final combatents = (data['combatents'] as List<dynamic>)
         .map((c) => NetworkCombatent.fromJson(c as Map<String, dynamic>))
         .toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: combatents,
@@ -893,14 +953,14 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyEncountersReplaced(Map<String, dynamic> data) {
     final encounters = (data['encounters'] as List<dynamic>)
         .map((e) => NetworkEncounter.fromJson(e as Map<String, dynamic>))
         .toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -916,14 +976,14 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyWikiEntriesReplaced(Map<String, dynamic> data) {
     final wikiEntries = (data['wikiEntries'] as List<dynamic>)
         .map((w) => NetworkWikiEntry.fromJson(w as Map<String, dynamic>))
         .toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -939,14 +999,14 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyLootItemsReplaced(Map<String, dynamic> data) {
     final lootItems = (data['lootItems'] as List<dynamic>)
         .map((l) => NetworkLootItem.fromJson(l as Map<String, dynamic>))
         .toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -962,14 +1022,14 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applySpellEntriesReplaced(Map<String, dynamic> data) {
     final spellEntries = (data['spellEntries'] as List<dynamic>)
         .map((s) => NetworkSpellEntry.fromJson(s as Map<String, dynamic>))
         .toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -985,14 +1045,14 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _applyAssetsReplaced(Map<String, dynamic> data) {
     final assets = (data['assets'] as List<dynamic>)
         .map((a) => NetworkAsset.fromJson(a as Map<String, dynamic>))
         .toList();
-    _replicatedState = CampaignReplicatedState(
+    _updateReplicatedState(CampaignReplicatedState(
       dataVersion: _replicatedState!.dataVersion,
       assignments: _replicatedState!.assignments,
       combatents: _replicatedState!.combatents,
@@ -1008,12 +1068,12 @@ class CampaignNetworkClient {
       players: _replicatedState!.players,
       monsters: _replicatedState!.monsters,
       npcs: _replicatedState!.npcs,
-    );
+    ));
   }
 
   void _handleAssignmentChanged(Map<String, dynamic> payload) {
     final assignment = PlayerAssignment.fromJson(payload);
-    if (assignment.clientID == _clientID) {
+    if (assignment.clientID.toUpperCase() == _clientID.toUpperCase()) {
       _assignedPlayerID = assignment.playerCharacterID;
       _updateState(_state.copyWith(assignedPlayerID: _assignedPlayerID));
     }
@@ -1257,7 +1317,7 @@ class CampaignNetworkClient {
     _connectedHost = null;
     _connectedPort = null;
     _assignedPlayerID = null;
-    _replicatedState = null;
+    _updateReplicatedState(null);
     _lastAppliedRevision = 0;
     _currentRevision = 0;
     _pendingCommands.clear();
@@ -1273,5 +1333,6 @@ class CampaignNetworkClient {
     stopBrowsing();
     _discoveredHostsController.close();
     _connectionStateController.close();
+    _replicatedStateController.close();
   }
 }

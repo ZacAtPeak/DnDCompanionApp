@@ -427,7 +427,7 @@ class CampaignDelta {
   final int revision;
   final int previousRevision;
   final DateTime createdAt;
-  final String originClientID;
+  final String? originClientID;
   final List<CampaignDeltaChange> changes;
 
   CampaignDelta({
@@ -435,7 +435,7 @@ class CampaignDelta {
     required this.revision,
     required this.previousRevision,
     required this.createdAt,
-    required this.originClientID,
+    this.originClientID,
     required this.changes,
   });
 
@@ -444,7 +444,7 @@ class CampaignDelta {
         'revision': revision,
         'previousRevision': previousRevision,
         'createdAt': _dateToEpochMs(createdAt),
-        'originClientID': originClientID,
+        if (originClientID != null) 'originClientID': originClientID,
         'changes': changes.map((c) => c.toJson()).toList(),
       };
 
@@ -453,7 +453,7 @@ class CampaignDelta {
         revision: _parseInt(json['revision']),
         previousRevision: _parseInt(json['previousRevision']),
         createdAt: _epochMsToDate(_parseInt(json['createdAt'])),
-        originClientID: json['originClientID'] as String,
+        originClientID: json['originClientID'] as String?,
         changes: (json['changes'] as List<dynamic>)
             .map((c) =>
                 CampaignDeltaChange.fromJson(c as Map<String, dynamic>))
@@ -997,6 +997,35 @@ class NetworkAbilityScores {
       );
 }
 
+class NetworkSkillProficiency {
+  final String skill;
+  final bool isProficient;
+  final int bonus;
+  final String abilityScore;
+
+  NetworkSkillProficiency({
+    required this.skill,
+    required this.isProficient,
+    required this.bonus,
+    required this.abilityScore,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'skill': skill,
+        'isProficient': isProficient,
+        'bonus': bonus,
+        'abilityScore': abilityScore,
+      };
+
+  factory NetworkSkillProficiency.fromJson(Map<String, dynamic> json) =>
+      NetworkSkillProficiency(
+        skill: json['skill'] as String,
+        isProficient: json['isProficient'] as bool,
+        bonus: _parseInt(json['bonus']),
+        abilityScore: json['abilityScore'] as String,
+      );
+}
+
 class NetworkPlayerState {
   final String id;
   final String name;
@@ -1020,6 +1049,7 @@ class NetworkPlayerState {
   final List<String> knownSpells;
   final List<String> languages;
   final double initiative;
+  final List<NetworkSkillProficiency> skills;
 
   NetworkPlayerState({
     required this.id,
@@ -1044,6 +1074,7 @@ class NetworkPlayerState {
     this.knownSpells = const [],
     this.languages = const [],
     this.initiative = 0,
+    this.skills = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -1069,6 +1100,7 @@ class NetworkPlayerState {
         'knownSpells': knownSpells,
         'languages': languages,
         'initiative': initiative,
+        'skills': skills.map((s) => s.toJson()).toList(),
       };
 
   factory NetworkPlayerState.fromJson(Map<String, dynamic> json) =>
@@ -1116,8 +1148,13 @@ class NetworkPlayerState {
                 .toList() ??
             [],
         initiative: (json['initiative'] as num?)?.toDouble() ?? 0,
+        skills: (json['skills'] as List<dynamic>?)
+                ?.map((s) =>
+                    NetworkSkillProficiency.fromJson(s as Map<String, dynamic>))
+                .toList() ??
+            [],
       );
-}
+  }
 
 class NetworkMonsterState {
   final String id;
