@@ -220,6 +220,7 @@ class CampaignNetworkClient {
     final json = envelope.toJsonString();
     final framed = framePayload(json);
     _socket!.add(framed);
+    await _socket!.flush();
   }
 
   // Message handling
@@ -235,9 +236,19 @@ class CampaignNetworkClient {
     try {
       final envelope = CampaignNetworkEnvelope.fromJsonString(jsonString);
       _processEnvelope(envelope);
-    } catch (e) {
+    } catch (e, stack) {
       // ignore: avoid_print
-      print('Failed to parse message: $e');
+      print('Failed to parse message: $e\n$stack');
+      // Logcat truncates at ~4000 chars, so chunk the raw JSON.
+      const chunkSize = 800;
+      for (var i = 0; i < jsonString.length; i += chunkSize) {
+        print('RAW[$i]: ${jsonString.substring(i, (i + chunkSize).clamp(0, jsonString.length))}');
+      }
+      _updateState(ConnectionState(
+        status: ConnectionStatus.failed,
+        peerName: _peerName,
+        errorMessage: 'Protocol error: $e',
+      ));
     }
   }
 

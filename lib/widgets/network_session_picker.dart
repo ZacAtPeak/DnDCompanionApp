@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../providers/campaign_state_provider.dart';
@@ -20,11 +22,12 @@ class NetworkSessionPicker extends StatefulWidget {
 
 class _NetworkSessionPickerState extends State<NetworkSessionPicker> {
   List<DiscoveredHost> _hosts = [];
+  StreamSubscription<List<DiscoveredHost>>? _hostsSub;
 
   @override
   void initState() {
     super.initState();
-    widget.client.discoveredHostsStream.listen((hosts) {
+    _hostsSub = widget.client.discoveredHostsStream.listen((hosts) {
       if (mounted) {
         setState(() => _hosts = hosts);
       }
@@ -33,6 +36,7 @@ class _NetworkSessionPickerState extends State<NetworkSessionPicker> {
 
   @override
   void dispose() {
+    _hostsSub?.cancel();
     if (widget.client.connectionState.status == net.ConnectionStatus.browsing) {
       widget.client.stopBrowsing();
     }

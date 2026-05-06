@@ -3,7 +3,12 @@ import 'dart:convert';
 const String kZeroUUID = '00000000-0000-0000-0000-000000000000';
 
 int _dateToEpochMs(DateTime dt) => dt.millisecondsSinceEpoch;
-DateTime _epochMsToDate(int ms) => DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+DateTime _epochMsToDate(dynamic ms) =>
+    DateTime.fromMillisecondsSinceEpoch((ms as num).toInt(), isUtc: true);
+
+// Safely cast JSON numbers to int — servers may send integers as doubles.
+int _parseInt(dynamic v) => (v as num).toInt();
+int? _parseIntOrNull(dynamic v) => v != null ? (v as num).toInt() : null;
 
 class CampaignNetworkEnvelope {
   final int schemaVersion;
@@ -27,9 +32,9 @@ class CampaignNetworkEnvelope {
 
   factory CampaignNetworkEnvelope.fromJson(Map<String, dynamic> json) =>
       CampaignNetworkEnvelope(
-        schemaVersion: json['schemaVersion'] as int,
+        schemaVersion: _parseInt(json['schemaVersion']),
         sessionID: json['sessionID'] as String,
-        sentAt: _epochMsToDate(json['sentAt'] as int),
+        sentAt: _epochMsToDate(_parseInt(json['sentAt'])),
         message: CampaignNetworkMessage.fromJson(
             json['message'] as Map<String, dynamic>),
       );
@@ -128,7 +133,7 @@ class Hello {
   factory Hello.fromJson(Map<String, dynamic> json) => Hello(
         clientID: json['clientID'] as String,
         displayName: json['displayName'] as String? ?? 'D&D Companion',
-        protocolVersion: json['protocolVersion'] as int,
+        protocolVersion: _parseInt(json['protocolVersion']),
         capabilities: HelloCapabilities.fromJson(
             json['capabilities'] as Map<String, dynamic>),
       );
@@ -185,10 +190,10 @@ class CampaignNetworkWelcome {
       CampaignNetworkWelcome(
         sessionID: json['sessionID'] as String,
         sessionName: json['sessionName'] as String,
-        protocolVersion: json['protocolVersion'] as int,
-        currentRevision: json['currentRevision'] as int,
-        heartbeatIntervalMs: json['heartbeatIntervalMs'] as int? ?? 10000,
-        deltaRetentionLimit: json['deltaRetentionLimit'] as int? ?? 500,
+        protocolVersion: _parseInt(json['protocolVersion']),
+        currentRevision: _parseInt(json['currentRevision']),
+        heartbeatIntervalMs: _parseIntOrNull(json['heartbeatIntervalMs']) ?? 10000,
+        deltaRetentionLimit: _parseIntOrNull(json['deltaRetentionLimit']) ?? 500,
       );
 }
 
@@ -209,7 +214,7 @@ class CampaignResumeSession {
   factory CampaignResumeSession.fromJson(Map<String, dynamic> json) =>
       CampaignResumeSession(
         clientID: json['clientID'] as String,
-        lastAppliedRevision: json['lastAppliedRevision'] as int,
+        lastAppliedRevision: _parseInt(json['lastAppliedRevision']),
       );
 }
 
@@ -252,7 +257,7 @@ class PlayerAssignment {
       PlayerAssignment(
         clientID: json['clientID'] as String,
         playerCharacterID: json['playerCharacterID'] as String,
-        assignedByHostAt: _epochMsToDate(json['assignedByHostAt'] as int),
+        assignedByHostAt: _epochMsToDate(_parseInt(json['assignedByHostAt'])),
       );
 }
 
@@ -279,8 +284,8 @@ class CampaignNetworkSnapshot {
   factory CampaignNetworkSnapshot.fromJson(Map<String, dynamic> json) =>
       CampaignNetworkSnapshot(
         snapshotID: json['snapshotID'] as String,
-        revision: json['revision'] as int,
-        snapshotDate: _epochMsToDate(json['snapshotDate'] as int),
+        revision: _parseInt(json['revision']),
+        snapshotDate: _epochMsToDate(_parseInt(json['snapshotDate'])),
         state: CampaignReplicatedState.fromJson(
             json['state'] as Map<String, dynamic>),
       );
@@ -344,7 +349,7 @@ class CampaignReplicatedState {
 
   factory CampaignReplicatedState.fromJson(Map<String, dynamic> json) =>
       CampaignReplicatedState(
-        dataVersion: json['dataVersion'] as int? ?? 7,
+        dataVersion: _parseIntOrNull(json['dataVersion']) ?? 7,
         assignments: (json['assignments'] as List<dynamic>?)
                 ?.map((a) =>
                     PlayerAssignment.fromJson(a as Map<String, dynamic>))
@@ -445,9 +450,9 @@ class CampaignDelta {
 
   factory CampaignDelta.fromJson(Map<String, dynamic> json) => CampaignDelta(
         deltaID: json['deltaID'] as String,
-        revision: json['revision'] as int,
-        previousRevision: json['previousRevision'] as int,
-        createdAt: _epochMsToDate(json['createdAt'] as int),
+        revision: _parseInt(json['revision']),
+        previousRevision: _parseInt(json['previousRevision']),
+        createdAt: _epochMsToDate(_parseInt(json['createdAt'])),
         originClientID: json['originClientID'] as String,
         changes: (json['changes'] as List<dynamic>)
             .map((c) =>
@@ -475,8 +480,8 @@ class CampaignDeltaBatch {
 
   factory CampaignDeltaBatch.fromJson(Map<String, dynamic> json) =>
       CampaignDeltaBatch(
-        fromRevision: json['fromRevision'] as int,
-        toRevision: json['toRevision'] as int,
+        fromRevision: _parseInt(json['fromRevision']),
+        toRevision: _parseInt(json['toRevision']),
         deltas: (json['deltas'] as List<dynamic>)
             .map((d) => CampaignDelta.fromJson(d as Map<String, dynamic>))
             .toList(),
@@ -522,7 +527,7 @@ class CampaignCommandEnvelope {
       CampaignCommandEnvelope(
         commandID: json['commandID'] as String,
         clientID: json['clientID'] as String,
-        baseRevision: json['baseRevision'] as int,
+        baseRevision: _parseInt(json['baseRevision']),
         command: CampaignCommand.fromJson(json['command'] as Map<String, dynamic>),
       );
 }
@@ -547,8 +552,8 @@ class CampaignCommandAccepted {
   factory CampaignCommandAccepted.fromJson(Map<String, dynamic> json) =>
       CampaignCommandAccepted(
         commandID: json['commandID'] as String,
-        appliedRevision: json['appliedRevision'] as int,
-        appliedAt: _epochMsToDate(json['appliedAt'] as int),
+        appliedRevision: _parseInt(json['appliedRevision']),
+        appliedAt: _epochMsToDate(_parseInt(json['appliedAt'])),
       );
 }
 
@@ -575,7 +580,7 @@ class CampaignCommandRejected {
   factory CampaignCommandRejected.fromJson(Map<String, dynamic> json) =>
       CampaignCommandRejected(
         commandID: json['commandID'] as String,
-        rejectedAt: _epochMsToDate(json['rejectedAt'] as int),
+        rejectedAt: _epochMsToDate(_parseInt(json['rejectedAt'])),
         code: json['code'] as String,
         reason: json['reason'] as String,
       );
@@ -705,10 +710,10 @@ class RollEntry {
   factory RollEntry.fromJson(Map<String, dynamic> json) => RollEntry(
         type: json['type'] as String,
         name: json['name'] as String,
-        roll: json['roll'] as int,
-        modifier: json['modifier'] as int,
-        total: json['total'] as int,
-        timestamp: _epochMsToDate(json['timestamp'] as int),
+        roll: _parseInt(json['roll']),
+        modifier: _parseInt(json['modifier']),
+        total: _parseInt(json['total']),
+        timestamp: _epochMsToDate(_parseInt(json['timestamp'])),
       );
 }
 
@@ -756,9 +761,9 @@ class NetworkSpellSlot {
 
   factory NetworkSpellSlot.fromJson(Map<String, dynamic> json) =>
       NetworkSpellSlot(
-        level: json['level'] as int,
-        max: json['max'] as int,
-        available: json['available'] as int,
+        level: _parseInt(json['level']),
+        max: _parseInt(json['max']),
+        available: _parseInt(json['available']),
       );
 }
 
@@ -803,14 +808,14 @@ class NetworkAttack {
   factory NetworkAttack.fromJson(Map<String, dynamic> json) => NetworkAttack(
         id: json['id'] as String,
         name: json['name'] as String,
-        hitBonus: json['hitBonus'] as int,
-        reach: json['reach'] as String,
-        damageRoll: json['damageRoll'] as String,
-        damageType: json['damageType'] as String,
-        saveDC: json['saveDC'] as int?,
+        hitBonus: _parseInt(json['hitBonus']),
+        reach: json['reach'] as String? ?? '',
+        damageRoll: json['damageRoll'] as String? ?? '',
+        damageType: json['damageType'] as String? ?? '',
+        saveDC: _parseIntOrNull(json['saveDC']),
         description: json['description'] as String?,
-        maxUses: json['maxUses'] as int?,
-        remainingUses: json['remainingUses'] as int?,
+        maxUses: _parseIntOrNull(json['maxUses']),
+        remainingUses: _parseIntOrNull(json['remainingUses']),
       );
 }
 
@@ -859,12 +864,14 @@ class NetworkCombatent {
       NetworkCombatent(
         id: json['id'] as String,
         name: json['name'] as String,
-        entityType: json['entityType'] as String,
-        entityID: json['entityID'] as String,
-        currentHP: json['currentHP'] as int? ?? 0,
-        maxHP: json['maxHP'] as int? ?? 0,
-        temporaryHP: json['temporaryHP'] as int? ?? 0,
-        statuses: (json['statuses'] as List<dynamic>?)
+        entityType: json['entityType'] as String? ??
+            json['sourceEntityType'] as String? ?? '',
+        entityID: json['entityID'] as String? ??
+            json['sourceEntityID'] as String? ?? '',
+        currentHP: _parseIntOrNull(json['currentHP']) ?? 0,
+        maxHP: _parseIntOrNull(json['maxHP']) ?? 0,
+        temporaryHP: _parseIntOrNull(json['temporaryHP']) ?? 0,
+        statuses: ((json['statuses'] ?? json['status']) as List<dynamic>?)
                 ?.map((s) =>
                     NetworkStatusCondition.fromJson(s as Map<String, dynamic>))
                 .toList() ??
@@ -907,11 +914,11 @@ class NetworkMovementSpeed {
 
   factory NetworkMovementSpeed.fromJson(Map<String, dynamic> json) =>
       NetworkMovementSpeed(
-        walk: json['walk'] as int,
-        swim: json['swim'] as int?,
-        fly: json['fly'] as int?,
-        climb: json['climb'] as int?,
-        burrow: json['burrow'] as int?,
+        walk: _parseInt(json['walk']),
+        swim: _parseIntOrNull(json['swim']),
+        fly: _parseIntOrNull(json['fly']),
+        climb: _parseIntOrNull(json['climb']),
+        burrow: _parseIntOrNull(json['burrow']),
         hover: json['hover'] as bool? ?? false,
       );
 }
@@ -945,8 +952,8 @@ class NetworkInventoryItem {
   factory NetworkInventoryItem.fromJson(Map<String, dynamic> json) =>
       NetworkInventoryItem(
         id: json['id'] as String,
-        name: json['name'] as String,
-        quantity: json['quantity'] as int? ?? 1,
+        name: json['name'] as String? ?? json['lootItemID'] as String? ?? '',
+        quantity: _parseIntOrNull(json['quantity']) ?? 1,
         weight: (json['weight'] as num?)?.toDouble() ?? 0,
         isEquipped: json['isEquipped'] as bool? ?? false,
         description: json['description'] as String?,
@@ -981,12 +988,12 @@ class NetworkAbilityScores {
 
   factory NetworkAbilityScores.fromJson(Map<String, dynamic> json) =>
       NetworkAbilityScores(
-        strength: json['strength'] as int,
-        dexterity: json['dexterity'] as int,
-        constitution: json['constitution'] as int,
-        intelligence: json['intelligence'] as int,
-        wisdom: json['wisdom'] as int,
-        charisma: json['charisma'] as int,
+        strength: _parseInt(json['strength']),
+        dexterity: _parseInt(json['dexterity']),
+        constitution: _parseInt(json['constitution']),
+        intelligence: _parseInt(json['intelligence']),
+        wisdom: _parseInt(json['wisdom']),
+        charisma: _parseInt(json['charisma']),
       );
 }
 
@@ -1068,23 +1075,25 @@ class NetworkPlayerState {
       NetworkPlayerState(
         id: json['id'] as String,
         name: json['name'] as String,
-        race: json['race'] as String,
-        playerClass: json['playerClass'] as String,
-        level: json['level'] as int,
-        background: json['background'] as String,
-        size: json['size'] as String,
-        alignment: json['alignment'] as String,
-        armorClass: json['armorClass'] as int,
-        armorSource: json['armorSource'] as String,
-        currentHP: json['currentHP'] as int,
-        maxHP: json['maxHP'] as int,
-        hitDice: json['hitDice'] as String,
-        speed: NetworkMovementSpeed.fromJson(
-            json['speed'] as Map<String, dynamic>),
+        race: json['race'] as String? ?? '',
+        playerClass: json['playerClass'] as String? ?? '',
+        level: _parseIntOrNull(json['level']) ?? 0,
+        background: json['background'] as String? ?? '',
+        size: json['size'] as String? ?? '',
+        alignment: json['alignment'] as String? ?? '',
+        armorClass: _parseIntOrNull(json['armorClass']) ?? 0,
+        armorSource: json['armorSource'] as String? ?? '',
+        currentHP: _parseIntOrNull(json['currentHP']) ?? 0,
+        maxHP: _parseIntOrNull(json['maxHP']) ?? 0,
+        hitDice: json['hitDice'] as String? ?? '',
+        speed: json['speed'] != null
+            ? NetworkMovementSpeed.fromJson(
+                json['speed'] as Map<String, dynamic>)
+            : NetworkMovementSpeed(walk: 30),
         abilityScores: NetworkAbilityScores.fromJson(
             json['abilityScores'] as Map<String, dynamic>),
-        proficiencyBonus: json['proficiencyBonus'] as int,
-        statuses: (json['statuses'] as List<dynamic>?)
+        proficiencyBonus: _parseIntOrNull(json['proficiencyBonus']) ?? 0,
+        statuses: ((json['statuses'] ?? json['status']) as List<dynamic>?)
                 ?.map((s) =>
                     NetworkStatusCondition.fromJson(s as Map<String, dynamic>))
                 .toList() ??
@@ -1176,20 +1185,22 @@ class NetworkMonsterState {
       NetworkMonsterState(
         id: json['id'] as String,
         name: json['name'] as String,
-        size: json['size'] as String,
-        type: json['type'] as String,
-        alignment: json['alignment'] as String,
-        armorClass: json['armorClass'] as int,
-        armorSource: json['armorSource'] as String,
-        currentHP: json['currentHP'] as int,
-        maxHP: json['maxHP'] as int,
-        hitDice: json['hitDice'] as String,
-        speed: NetworkMovementSpeed.fromJson(
-            json['speed'] as Map<String, dynamic>),
+        size: json['size'] as String? ?? '',
+        type: json['type'] as String? ?? '',
+        alignment: json['alignment'] as String? ?? '',
+        armorClass: _parseIntOrNull(json['armorClass']) ?? 0,
+        armorSource: json['armorSource'] as String? ?? '',
+        currentHP: _parseIntOrNull(json['currentHP']) ?? 0,
+        maxHP: _parseIntOrNull(json['maxHP']) ?? 0,
+        hitDice: json['hitDice'] as String? ?? '',
+        speed: json['speed'] != null
+            ? NetworkMovementSpeed.fromJson(
+                json['speed'] as Map<String, dynamic>)
+            : NetworkMovementSpeed(walk: 30),
         abilityScores: NetworkAbilityScores.fromJson(
             json['abilityScores'] as Map<String, dynamic>),
-        proficiencyBonus: json['proficiencyBonus'] as int,
-        statuses: (json['statuses'] as List<dynamic>?)
+        proficiencyBonus: _parseIntOrNull(json['proficiencyBonus']) ?? 0,
+        statuses: ((json['statuses'] ?? json['status']) as List<dynamic>?)
                 ?.map((s) =>
                     NetworkStatusCondition.fromJson(s as Map<String, dynamic>))
                 .toList() ??
@@ -1198,8 +1209,8 @@ class NetworkMonsterState {
                 ?.map((a) => NetworkAttack.fromJson(a as Map<String, dynamic>))
                 .toList() ??
             [],
-        challengeRating: (json['challengeRating'] as num).toDouble(),
-        xp: json['xp'] as int,
+        challengeRating: (json['challengeRating'] as num?)?.toDouble() ?? 0,
+        xp: _parseIntOrNull(json['xp']) ?? 0,
         initiative: (json['initiative'] as num?)?.toDouble() ?? 0,
       );
 }
@@ -1273,21 +1284,23 @@ class NetworkNPCState {
       NetworkNPCState(
         id: json['id'] as String,
         name: json['name'] as String,
-        role: json['role'] as String,
-        size: json['size'] as String,
-        alignment: json['alignment'] as String,
-        biography: json['biography'] as String,
-        armorClass: json['armorClass'] as int,
-        armorSource: json['armorSource'] as String,
-        currentHP: json['currentHP'] as int,
-        maxHP: json['maxHP'] as int,
-        hitDice: json['hitDice'] as String,
-        speed: NetworkMovementSpeed.fromJson(
-            json['speed'] as Map<String, dynamic>),
+        role: json['role'] as String? ?? '',
+        size: json['size'] as String? ?? '',
+        alignment: json['alignment'] as String? ?? '',
+        biography: json['biography'] as String? ?? '',
+        armorClass: _parseIntOrNull(json['armorClass']) ?? 0,
+        armorSource: json['armorSource'] as String? ?? '',
+        currentHP: _parseIntOrNull(json['currentHP']) ?? 0,
+        maxHP: _parseIntOrNull(json['maxHP']) ?? 0,
+        hitDice: json['hitDice'] as String? ?? '',
+        speed: json['speed'] != null
+            ? NetworkMovementSpeed.fromJson(
+                json['speed'] as Map<String, dynamic>)
+            : NetworkMovementSpeed(walk: 30),
         abilityScores: NetworkAbilityScores.fromJson(
             json['abilityScores'] as Map<String, dynamic>),
-        proficiencyBonus: json['proficiencyBonus'] as int,
-        statuses: (json['statuses'] as List<dynamic>?)
+        proficiencyBonus: _parseIntOrNull(json['proficiencyBonus']) ?? 0,
+        statuses: ((json['statuses'] ?? json['status']) as List<dynamic>?)
                 ?.map((s) =>
                     NetworkStatusCondition.fromJson(s as Map<String, dynamic>))
                 .toList() ??
@@ -1333,8 +1346,11 @@ class NetworkWikiEntry {
       NetworkWikiEntry(
         id: json['id'] as String,
         title: json['title'] as String,
-        content: json['content'] as String,
-        createdAt: _epochMsToDate(json['createdAt'] as int),
+        content: json['content'] as String? ??
+            json['description'] as String? ?? '',
+        createdAt: json['createdAt'] != null
+            ? _epochMsToDate(json['createdAt'])
+            : DateTime.now(),
       );
 }
 
@@ -1365,8 +1381,8 @@ class NetworkLootItem {
       NetworkLootItem(
         id: json['id'] as String,
         name: json['name'] as String,
-        description: json['description'] as String,
-        quantity: json['quantity'] as int? ?? 1,
+        description: json['description'] as String? ?? '',
+        quantity: _parseIntOrNull(json['quantity']) ?? 1,
         isDivided: json['isDivided'] as bool? ?? false,
       );
 }
@@ -1395,7 +1411,7 @@ class NetworkItemModifier {
       NetworkItemModifier(
         id: json['id'] as String,
         name: json['name'] as String,
-        bonus: json['bonus'] as int,
+        bonus: _parseInt(json['bonus']),
         description: json['description'] as String?,
       );
 }
@@ -1439,13 +1455,13 @@ class NetworkSpellEntry {
       NetworkSpellEntry(
         id: json['id'] as String,
         name: json['name'] as String,
-        level: json['level'] as int,
-        school: json['school'] as String,
-        description: json['description'] as String,
-        castingTime: json['castingTime'] as String,
-        range: json['range'] as String,
-        components: json['components'] as String,
-        duration: json['duration'] as String,
+        level: _parseInt(json['level']),
+        school: json['school'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        castingTime: json['castingTime'] as String? ?? '',
+        range: json['range'] as String? ?? '',
+        components: json['components'] as String? ?? '',
+        duration: json['duration'] as String? ?? '',
       );
 }
 
@@ -1501,7 +1517,9 @@ class NetworkEncounter {
       NetworkEncounter(
         id: json['id'] as String,
         name: json['name'] as String,
-        description: json['description'] as String,
-        createdAt: _epochMsToDate(json['createdAt'] as int),
+        description: json['description'] as String? ?? '',
+        createdAt: json['createdAt'] != null
+            ? _epochMsToDate(json['createdAt'])
+            : DateTime.now(),
       );
 }
