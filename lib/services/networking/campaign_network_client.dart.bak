@@ -35,7 +35,6 @@ class CampaignNetworkClient {
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
   Timer? _stateUpdateTimer;
-  Timer? _handshakeTimeoutTimer;
   ConnectionState? _pendingStateUpdate;
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 5;
@@ -73,47 +72,10 @@ class CampaignNetworkClient {
   }
 
   void _updateState(ConnectionState newState) {
-    if (_state.status == newState.status &&
-        _state.peerName == newState.peerName &&
-        _state.sessionID == newState.sessionID &&
-        _state.errorMessage == newState.errorMessage) {
-      return;
-    }
     _state = newState;
-    _pendingStateUpdate = newState;
-    _stateUpdateTimer?.cancel();
-    _stateUpdateTimer = Timer(
-      const Duration(milliseconds: _stateUpdateDebounceMs),
-      _flushStateUpdate,
-    );
-  }
-
-  void _flushStateUpdate() {
-    _stateUpdateTimer = null;
     if (!_connectionStateController.isClosed) {
-      _connectionStateController.add(_state);
+      _connectionStateController.add(newState);
     }
-  }
-
-  void _startHandshakeTimeout() {
-    _handshakeTimeoutTimer?.cancel();
-    _handshakeTimeoutTimer = Timer(const Duration(seconds: 15), () {
-      if (_state.status == ConnectionStatus.connectedUnsynced ||
-          _state.status == ConnectionStatus.syncing) {
-        _updateState(ConnectionState(
-          status: ConnectionStatus.failed,
-          peerName: _peerName,
-          errorMessage: 'Handshake timeout: server did not respond',
-        ));
-        _socket?.close();
-        _tryReconnect();
-      }
-    });
-  }
-
-  void _cancelHandshakeTimeout() {
-    _handshakeTimeoutTimer?.cancel();
-    _handshakeTimeoutTimer = null;
   }
 
   Future<void> startBrowsing() async {
@@ -212,7 +174,6 @@ class CampaignNetworkClient {
     );
     await _sendEnvelope(envelope);
     _updateState(_state.copyWith(status: ConnectionStatus.connectedUnsynced));
-    _startHandshakeTimeout();
   }
 
   Future<void> _sendEnvelope(CampaignNetworkEnvelope envelope) async {
