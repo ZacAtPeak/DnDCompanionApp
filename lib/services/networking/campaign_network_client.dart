@@ -338,36 +338,52 @@ class CampaignNetworkClient {
           if (assignment.clientID == _clientID) {
             _assignedPlayerID = assignment.playerCharacterID;
           }
+          break;
         case 'playerHitPointsChanged':
           _applyHitPointsChange(change.data);
+          break;
         case 'playerStatusesChanged':
           _applyStatusesChange(change.data);
+          break;
         case 'playerSpellSlotChanged':
           _applySpellSlotChange(change.data);
+          break;
         case 'playerActionUsesChanged':
           _applyActionUsesChange(change.data);
+          break;
         case 'playerInventoryItemEquippedChanged':
           _applyInventoryEquippedChange(change.data);
+          break;
         case 'combatentHitPointsChanged':
           _applyCombatentHitPointsChange(change.data);
+          break;
         case 'combatentStatusesChanged':
           _applyCombatentStatusesChange(change.data);
+          break;
         case 'combatentSpellSlotChanged':
           _applyCombatentSpellSlotChange(change.data);
+          break;
         case 'rollInserted':
           _applyRollInserted(change.data);
+          break;
         case 'combatentsReplaced':
           _applyCombatentsReplaced(change.data);
+          break;
         case 'encountersReplaced':
           _applyEncountersReplaced(change.data);
+          break;
         case 'wikiEntriesReplaced':
           _applyWikiEntriesReplaced(change.data);
+          break;
         case 'lootItemsReplaced':
           _applyLootItemsReplaced(change.data);
+          break;
         case 'spellEntriesReplaced':
           _applySpellEntriesReplaced(change.data);
+          break;
         case 'assetsReplaced':
           _applyAssetsReplaced(change.data);
+          break;
       }
     }
   }
