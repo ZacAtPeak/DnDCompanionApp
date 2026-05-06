@@ -28,5 +28,11 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>DnD Companion needs access to your local network to discover and connect to D&amp;D campaign sessions hosted on nearby devices.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dndapp._tcp</string>
+	</array>
 </dict>
 </plist>

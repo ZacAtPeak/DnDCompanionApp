@@ -24,6 +24,12 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>DnD Companion needs access to your local network to discover and connect to D&amp;D campaign sessions hosted on nearby devices.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dndapp._tcp</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
