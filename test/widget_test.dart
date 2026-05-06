@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dndappcompanion/main.dart';
@@ -10,24 +9,25 @@ void main() {
     expect(find.text('D&D Companion'), findsOneWidget);
   });
 
-  testWidgets('App displays tab bar with 5 tabs', (WidgetTester tester) async {
+  testWidgets('App displays tab bar with 6 tabs', (WidgetTester tester) async {
     await tester.pumpWidget(const DndCompanionApp());
 
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Characters'), findsOneWidget);
-    expect(find.text('Dice'), findsOneWidget);
+    expect(find.text('Abilities/Skills'), findsOneWidget);
+    expect(find.text('Actions'), findsOneWidget);
+    expect(find.text('Spells'), findsOneWidget);
+    expect(find.text('Features'), findsOneWidget);
     expect(find.text('Inventory'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
   });
 
   testWidgets('Tapping tab switches content', (WidgetTester tester) async {
     await tester.pumpWidget(const DndCompanionApp());
 
-    expect(find.text('Home Tab'), findsOneWidget);
+    expect(find.text('Ability Scores'), findsOneWidget);
 
-    await tester.tap(find.text('Dice'));
+    await tester.tap(find.text('Actions'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Dice Tab'), findsOneWidget);
+    expect(find.text('Actions Tab'), findsOneWidget);
   });
 }

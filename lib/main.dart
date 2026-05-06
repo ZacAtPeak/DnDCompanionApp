@@ -3,6 +3,11 @@ import 'package:flutter/services.dart';
 
 import 'demo_data.dart';
 import 'widgets/ability_scores_grid.dart';
+import 'providers/campaign_state_provider.dart';
+import 'services/networking/campaign_network_client.dart';
+import 'services/networking/connection_state.dart' as net;
+import 'models/models.dart' as models;
+import 'widgets/network_session_picker.dart';
 
 void main() {
   runApp(const DndCompanionApp());
@@ -39,6 +44,23 @@ class _DndCompanionAppState extends State<DndCompanionApp> {
     final isDark = _themeMode == ThemeMode.dark ||
         (_themeMode == ThemeMode.system &&
             MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 600;
+
+    if (isCompact) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
 
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -92,16 +114,22 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late CampaignNetworkClient _networkClient;
+  late CampaignStateNotifier _campaignNotifier;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 6, vsync: this);
+    _networkClient = CampaignNetworkClient();
+    _campaignNotifier = CampaignStateNotifier(client: _networkClient);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _campaignNotifier.dispose();
+    _networkClient.dispose();
     super.dispose();
   }
 
@@ -115,6 +143,8 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
         lightSeedColor: widget.lightSeedColor,
         darkSeedColor: widget.darkSeedColor,
         onSeedColorChanged: widget.onSeedColorChanged,
+        networkClient: _networkClient,
+        campaignNotifier: _campaignNotifier,
       ),
     );
   }
@@ -146,16 +176,21 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               ],
             ),
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: const [
-                  HomeTab(),
-                  ActionsTab(),
-                  SpellsTab(),
-                  FeaturesTab(),
-                  InventoryTab(),
-                  NotesTab(),
-                ],
+              child: ListenableBuilder(
+                listenable: _campaignNotifier,
+                builder: (context, _) {
+                  return TabBarView(
+                    controller: _tabController,
+                    children: [
+                      HomeTab(notifier: _campaignNotifier),
+                      ActionsTab(notifier: _campaignNotifier),
+                      SpellsTab(notifier: _campaignNotifier),
+                      FeaturesTab(notifier: _campaignNotifier),
+                      InventoryTab(notifier: _campaignNotifier),
+                      NotesTab(notifier: _campaignNotifier),
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -461,6 +496,8 @@ class SettingsPage extends StatefulWidget {
   final Color lightSeedColor;
   final Color darkSeedColor;
   final void Function(Color color, bool isDark) onSeedColorChanged;
+  final CampaignNetworkClient networkClient;
+  final CampaignStateNotifier campaignNotifier;
 
   const SettingsPage({
     super.key,
@@ -469,6 +506,8 @@ class SettingsPage extends StatefulWidget {
     required this.lightSeedColor,
     required this.darkSeedColor,
     required this.onSeedColorChanged,
+    required this.networkClient,
+    required this.campaignNotifier,
   });
 
   @override
@@ -573,6 +612,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: 'Initiative Order',
                       subtitle: 'Sort by initiative value',
                       onTap: () {},
+                    ),
+                  ],
+                ),
+                _SettingsSection(
+                  title: 'Campaign Network',
+                  children: [
+                    _NetworkStatusTile(
+                      networkClient: widget.networkClient,
+                      campaignNotifier: widget.campaignNotifier,
                     ),
                   ],
                 ),
@@ -873,12 +921,138 @@ class _ColorPickerTile extends StatelessWidget {
   }
 }
 
-class HomeTab extends StatelessWidget {
-  const HomeTab({super.key});
+class _NetworkStatusTile extends StatelessWidget {
+  final CampaignNetworkClient networkClient;
+  final CampaignStateNotifier campaignNotifier;
+
+  const _NetworkStatusTile({
+    required this.networkClient,
+    required this.campaignNotifier,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final userCharacter = DemoData.createUserCharacter();
+    return ListenableBuilder(
+      listenable: campaignNotifier,
+      builder: (context, _) {
+        final state = campaignNotifier.connectionState;
+        IconData icon;
+        switch (state.status) {
+          case net.ConnectionStatus.ready:
+            icon = Icons.wifi;
+          case net.ConnectionStatus.stale:
+            icon = Icons.wifi_off;
+          case net.ConnectionStatus.connecting:
+          case net.ConnectionStatus.connectedUnsynced:
+          case net.ConnectionStatus.syncing:
+            icon = Icons.wifi_find;
+          case net.ConnectionStatus.browsing:
+            icon = Icons.search;
+          case net.ConnectionStatus.failed:
+            icon = Icons.error_outline;
+          case net.ConnectionStatus.idle:
+            icon = Icons.wifi_tethering;
+        }
+        return ListTile(
+          leading: Icon(icon),
+          title: const Text('Campaign Network'),
+          subtitle: Text(state.displayText),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (context) => NetworkSessionPicker(
+                client: networkClient,
+                notifier: campaignNotifier,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class HomeTab extends StatelessWidget {
+  final CampaignStateNotifier? notifier;
+
+  const HomeTab({super.key, this.notifier});
+
+  @override
+  Widget build(BuildContext context) {
+    final networkPlayer = notifier?.assignedPlayer;
+
+    final userCharacter = networkPlayer != null
+        ? models.UserCharacter(
+            character: models.PlayerCharacter(
+              id: networkPlayer.id,
+              name: networkPlayer.name,
+              race: networkPlayer.race,
+              playerClass: networkPlayer.playerClass,
+              level: networkPlayer.level,
+              background: networkPlayer.background,
+              size: models.CreatureSize.fromString(networkPlayer.size),
+              alignment: models.Alignment.fromString(networkPlayer.alignment),
+              armorClass: networkPlayer.armorClass,
+              armorSource: networkPlayer.armorSource,
+              currentHP: networkPlayer.currentHP,
+              maxHP: networkPlayer.maxHP,
+              hitDice: networkPlayer.hitDice,
+              speed: models.MovementSpeed(
+                walk: networkPlayer.speed.walk,
+                swim: networkPlayer.speed.swim,
+                fly: networkPlayer.speed.fly,
+                climb: networkPlayer.speed.climb,
+                burrow: networkPlayer.speed.burrow,
+                hover: networkPlayer.speed.hover,
+              ),
+              abilityScores: models.AbilityScores(
+                strength: networkPlayer.abilityScores.strength,
+                dexterity: networkPlayer.abilityScores.dexterity,
+                constitution: networkPlayer.abilityScores.constitution,
+                intelligence: networkPlayer.abilityScores.intelligence,
+                wisdom: networkPlayer.abilityScores.wisdom,
+                charisma: networkPlayer.abilityScores.charisma,
+              ),
+              proficiencyBonus: networkPlayer.proficiencyBonus,
+              savingThrowProficiencies: const models.SavingThrowProficiencies(),
+              skills: const [],
+              senses: const models.Senses(passivePerception: 10),
+              languages: networkPlayer.languages,
+              actions: networkPlayer.actions
+                  .map((a) => models.Attack(
+                        id: a.id,
+                        name: a.name,
+                        hitBonus: a.hitBonus,
+                        reach: a.reach,
+                        damageRoll: a.damageRoll,
+                        damageType: models.DamageType.fromString(a.damageType),
+                        saveDC: a.saveDC,
+                        description: a.description,
+                        maxUses: a.maxUses,
+                        remainingUses: a.remainingUses,
+                      ))
+                  .toList(),
+              spellSlots: networkPlayer.spellSlots
+                  .map((s) => models.SpellSlot(
+                        level: s.level,
+                        max: s.max,
+                        available: s.available,
+                      ))
+                  .toList(),
+              knownSpells: networkPlayer.knownSpells,
+              status: networkPlayer.statuses
+                  .map((s) => models.StatusCondition(
+                        name: s.name,
+                        effect: s.effect,
+                        desc: s.desc,
+                      ))
+                  .toList(),
+            ),
+          )
+        : DemoData.createUserCharacter();
+
     final character = userCharacter.character;
     final scores = character.abilityScores;
 
@@ -1015,7 +1189,9 @@ class _SkillRow extends StatelessWidget {
 }
 
 class ActionsTab extends StatelessWidget {
-  const ActionsTab({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const ActionsTab({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
@@ -1026,7 +1202,9 @@ class ActionsTab extends StatelessWidget {
 }
 
 class SpellsTab extends StatelessWidget {
-  const SpellsTab({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const SpellsTab({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
@@ -1037,7 +1215,9 @@ class SpellsTab extends StatelessWidget {
 }
 
 class FeaturesTab extends StatelessWidget {
-  const FeaturesTab({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const FeaturesTab({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
@@ -1048,7 +1228,9 @@ class FeaturesTab extends StatelessWidget {
 }
 
 class InventoryTab extends StatelessWidget {
-  const InventoryTab({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const InventoryTab({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
@@ -1059,7 +1241,9 @@ class InventoryTab extends StatelessWidget {
 }
 
 class NotesTab extends StatelessWidget {
-  const NotesTab({super.key});
+  final CampaignStateNotifier? notifier;
+
+  const NotesTab({super.key, this.notifier});
 
   @override
   Widget build(BuildContext context) {
