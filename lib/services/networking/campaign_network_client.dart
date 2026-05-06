@@ -268,6 +268,7 @@ class CampaignNetworkClient {
   }
 
   void _handleWelcome(Map<String, dynamic> payload) {
+    _cancelHandshakeTimeout();
     final welcome = CampaignNetworkWelcome.fromJson(payload);
     _sessionID = welcome.sessionID;
     _sessionName = welcome.sessionName;
@@ -1235,6 +1236,8 @@ class CampaignNetworkClient {
     _reconnectTimer?.cancel();
     _reconnectAttempts = 0;
     _heartbeatTimer?.cancel();
+    _stateUpdateTimer?.cancel();
+    _handshakeTimeoutTimer?.cancel();
     _socket?.close();
     _socket = null;
     _sessionID = null;
